@@ -1,0 +1,296 @@
+#include "fileio.h"
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <cstring>
+#include <filesystem>
+#include <raylib.h>
+
+// Define path constants
+const std::string FileIO::DATA_FOLDER = "data";
+const std::string FileIO::SAVES_FOLDER = "data/saves";
+const std::string FileIO::PLAYERS_FILE = "data/players.dat";
+
+// Initialize file system
+bool FileIO::Initialize() {
+    return EnsureDirectoriesExist();
+}
+
+// Ensure all necessary directories exist
+bool FileIO::EnsureDirectoriesExist() {
+    // Create data directory if it doesn't exist
+    if (!DirectoryExists(DATA_FOLDER.c_str())) {
+        if (!std::filesystem::create_directory(DATA_FOLDER)) {
+            return false;
+        }
+    }
+    
+    // Create saves directory if it doesn't exist
+    if (!DirectoryExists(SAVES_FOLDER.c_str())) {
+        if (!std::filesystem::create_directory(SAVES_FOLDER)) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+// Load players data file
+std::map<std::string, PlayerData> FileIO::LoadPlayersData() {
+    std::map<std::string, PlayerData> playersData;
+    
+    // Check if players file exists
+    if (!FileExists(PLAYERS_FILE.c_str())) {
+        return playersData; // Return empty map if file doesn't exist
+    }
+    
+    // Open players file
+    std::ifstream file(PLAYERS_FILE);
+    if (!file.is_open()) {
+        return playersData; // Return empty map if file can't be opened
+    }
+    
+    // Read file line by line
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string name;
+        int highScore;
+        bool hasSavedGame;
+        
+        // Parse line (name,highScore,hasSavedGame)
+        if (std::getline(iss, name, ',')) {
+            std::string scoreStr;
+            if (std::getline(iss, scoreStr, ',')) {
+                highScore = std::stoi(scoreStr);
+                
+                std::string savedGameStr;
+                if (std::getline(iss, savedGameStr)) {
+                    hasSavedGame = (savedGameStr == "1");
+                    
+                    // Add player to map
+                    PlayerData data = {name, highScore, hasSavedGame};
+                    playersData[name] = data;
+                }
+            }
+        }
+    }
+    
+    file.close();
+    return playersData;
+}
+
+// Save players data file
+bool FileIO::SavePlayersData(const std::map<std::string, PlayerData>& playersData) {
+    // Open players file for writing
+    std::ofstream file(PLAYERS_FILE);
+    if (!file.is_open()) {
+        return false; // Return false if file can't be opened
+    }
+    
+    // Write each player's data
+    for (const auto& pair : playersData) {
+        const PlayerData& data = pair.second;
+        file << data.name << "," << data.highScore << "," << (data.hasSavedGame ? "1" : "0") << std::endl;
+    }
+    
+    file.close();
+    return true;
+}
+
+// Save a player's game state
+bool FileIO::SaveGameState(const std::string& playerName, const GameState& state) {
+    // Generate save file path
+    std::string savePath = SAVES_FOLDER + "/" + playerName + ".save";
+    
+    // Open save file for writing
+    std::ofstream file(savePath, std::ios::binary);
+    if (!file.is_open()) {
+        return false; // Return false if file can't be opened
+    }
+    
+    // Write game state to file
+    file.write(reinterpret_cast<const char*>(&state), sizeof(GameState));
+    file.close();
+    
+    // Update player's saved game status
+    return UpdatePlayerStatus(playerName, true);
+}
+
+// Load a player's game state
+bool FileIO::LoadGameState(const std::string& playerName, GameState& state) {
+    // Generate save file path
+    std::string savePath = SAVES_FOLDER + "/" + playerName + ".save";
+    
+    // Check if save file exists
+    if (!FileExists(savePath.c_str())) {
+        return false; // Return false if file doesn't exist
+    }
+    
+    // Open save file for reading
+    std::ifstream file(savePath, std::ios::binary);
+    if (!file.is_open()) {
+        return false; // Return false if file can't be opened
+    }
+    
+    // Read game state from file
+    file.read(reinterpret_cast<char*>(&state), sizeof(GameState));
+    file.close();
+    
+    return true;
+}
+
+// Save a player's high score
+bool FileIO::SaveHighScore(const std::string& playerName, int score) {
+    // Load existing players data
+    auto playersData = LoadPlayersData();
+    
+    // Update or add player's high score
+    if (playersData.find(playerName) != playersData.end()) {
+        // Update existing player's high score if new score is higher
+        if (score > playersData[playerName].highScore) {
+            playersData[playerName].highScore = score;
+        }
+    } else {
+        // Add new player
+        PlayerData data = {playerName, score, false};
+        playersData[playerName] = data;
+    }
+    
+    // Save updated players data
+    return SavePlayersData(playersData);
+}
+
+// Load all high scores
+std::vector<PlayerData> FileIO::LoadHighScores() {
+    // Load players data
+    auto playersData = LoadPlayersData();
+    
+    // Convert map to vector
+    std::vector<PlayerData> highScores;
+    for (const auto& pair : playersData) {
+        highScores.push_back(pair.second);
+    }
+    
+    // Sort by high score (descending)
+    std::sort(highScores.begin(), highScores.end(), 
+              [](const PlayerData& a, const PlayerData& b) {
+                  return a.highScore > b.highScore;
+              });
+    
+    // Limit to top 10 scores
+    if (highScores.size() > 10) {
+        highScores.resize(10);
+    }
+    
+    return highScores;
+}
+
+// Get list of all players
+std::vector<PlayerData> FileIO::GetPlayerList() {
+    // Load players data
+    auto playersData = LoadPlayersData();
+    
+    // Convert map to vector
+    std::vector<PlayerData> playerList;
+    for (const auto& pair : playersData) {
+        playerList.push_back(pair.second);
+    }
+    
+    // Sort alphabetically by name
+    std::sort(playerList.begin(), playerList.end(), 
+              [](const PlayerData& a, const PlayerData& b) {
+                  return a.name < b.name;
+              });
+    
+    return playerList;
+}
+
+// Delete a player's saved game
+bool FileIO::DeleteGameState(const std::string& playerName) {
+    // Generate save file path
+    std::string savePath = SAVES_FOLDER + "/" + playerName + ".save";
+    
+    // Check if save file exists
+    if (!FileExists(savePath.c_str())) {
+        return false; // Return false if file doesn't exist
+    }
+    
+    // Delete save file
+    if (remove(savePath.c_str()) != 0) {
+        return false; // Return false if file can't be deleted
+    }
+    
+    // Update player's saved game status
+    return UpdatePlayerStatus(playerName, false);
+}
+
+// Update player's saved game status
+bool FileIO::UpdatePlayerStatus(const std::string& playerName, bool hasSavedGame) {
+    // Load existing players data
+    auto playersData = LoadPlayersData();
+    
+    // Update or add player's saved game status
+    if (playersData.find(playerName) != playersData.end()) {
+        // Update existing player
+        playersData[playerName].hasSavedGame = hasSavedGame;
+    } else {
+        // Add new player with default high score of 0
+        PlayerData data = {playerName, 0, hasSavedGame};
+        playersData[playerName] = data;
+    }
+    
+    // Save updated players data
+    return SavePlayersData(playersData);
+}
+
+// Helper functions to convert between Game and GameState
+GameState GameToGameState(const Game& game) {
+    GameState state;
+    
+    // Copy grid
+    for (int row = 0; row < 20; row++) {
+        for (int column = 0; column < 20; column++) {
+            state.board[row][column] = game.grid.grid[row][column];
+        }
+    }
+    
+    // Copy current block info
+    state.currentBlockId = game.currentBlock.id;
+    state.currentRotationState = game.currentBlock.GetRotationState();
+    state.currentRowOffset = game.currentBlock.GetRowOffset();
+    state.currentColumnOffset = game.currentBlock.GetColumnOffset();
+    
+    // Copy next block info
+    state.nextBlockId = game.nextBlock.id;
+    
+    // Copy game stats
+    state.score = game.score;
+    state.level = game.level;
+    state.lines = game.lines;
+    state.gameTime = game.gameTime;
+    
+    return state;
+}
+
+void GameStateToGame(const GameState& state, Game& game) {
+    // Copy grid
+    for (int row = 0; row < 20; row++) {
+        for (int column = 0; column < 20; column++) {
+            game.grid.grid[row][column] = state.board[row][column];
+        }
+    }
+    
+    // Set game stats
+    game.score = state.score;
+    game.level = state.level;
+    game.lines = state.lines;
+    game.gameTime = state.gameTime;
+    
+    // Set current block
+    game.SetCurrentBlock(state.currentBlockId, state.currentRotationState, 
+                         state.currentRowOffset, state.currentColumnOffset);
+    
+    // Set next block
+    game.SetNextBlock(state.nextBlockId);
+}

@@ -1,0 +1,710 @@
+#include "game.h"
+#include <random>
+#include "fileio.h"
+#include <iostream>
+
+Game::Game()
+{
+    grid = Grid();
+    blocks = GetAllBlocks();
+    currentBlock = GetRandomBlock();
+    nextBlock = GetRandomBlock();
+    
+    // Initialize game state
+    gameState = STATE_MENU;
+    score = 0;
+    level = 1;
+    lines = 0;
+    gameTime = 0;
+    
+    // Initialize menu state
+    selectedMenuOption = 0;
+    selectedPlayerIndex = 0;
+    resumeGameAvailable = false;
+    
+    // Initialize player input
+    isEnteringName = false;
+    inputPlayerName = "";
+    currentPlayer = "";
+    
+    // Check if resume game is available
+    std::vector<PlayerData> players = FileIO::GetPlayerList();
+    for (const auto& player : players) {
+        if (player.hasSavedGame) {
+            resumeGameAvailable = true;
+            break;
+        }
+    }
+    
+    // Load player names
+    for (const auto& player : players) {
+        playerNames.push_back(player.name);
+    }
+}
+
+Block Game::GetRandomBlock()
+{
+    if(blocks.empty())
+    {
+        blocks = GetAllBlocks();
+    }
+    int randomIndex = rand() % blocks.size();
+    Block block = blocks[randomIndex];
+    blocks.erase(blocks.begin() + randomIndex);
+    return block;
+}
+
+std::vector<Block> Game::GetAllBlocks()
+{
+    return {IBlock(),JBlock(),LBlock(),OBlock(),SBlock(),TBlock(),ZBlock()};
+}
+
+void Game::Draw()
+{
+    switch(gameState)
+    {
+        case STATE_MENU:
+            DrawMenu();
+            break;
+        case STATE_GAMEPLAY:
+            grid.Draw();
+            currentBlock.Draw();
+            nextBlock.Draw(250, 70); // Draw next block
+            // Draw score, level, lines
+            DrawText(TextFormat("SCORE: %d", score), 20, 20, 18, WHITE);
+            DrawText(TextFormat("LEVEL: %d", level), 20, 45, 18, WHITE);
+            DrawText(TextFormat("LINES: %d", lines), 20, 70, 18, WHITE);
+            break;
+        case STATE_GAMEOVER:
+            DrawGameOver();
+            break;
+        case STATE_PAUSE:
+            DrawPaused();
+            break;
+        case STATE_HIGHSCORE:
+            DrawHighScores();
+            break;
+        case STATE_PLAYER_SELECT:
+            DrawPlayerSelection();
+            break;
+    }
+    
+    // Draw player name input if needed
+    if (isEnteringName) {
+        DrawPlayerNameInput();
+    }
+}
+
+void Game::DrawMenu()
+{
+    // Title
+    DrawText("TETRIS", GetScreenWidth()/2 - MeasureText("TETRIS", 40)/2, 60, 40, WHITE);
+    
+    // Menu options
+    const char* options[] = {
+        "NEW GAME",
+        "RESUME GAME",
+        "HIGH SCORES",
+        "EXIT"
+    };
+    
+    int startY = 150;
+    int spacing = 40;
+    
+    for (int i = 0; i < 4; i++) {
+        if (i == 1 && !resumeGameAvailable) {
+            // Gray out "RESUME GAME" if not available
+            DrawText(options[i], GetScreenWidth()/2 - MeasureText(options[i], 20)/2, 
+                    startY + i * spacing, 20, GRAY);
+        } else {
+            Color color = (i == selectedMenuOption) ? YELLOW : WHITE;
+            DrawText(options[i], GetScreenWidth()/2 - MeasureText(options[i], 20)/2, 
+                    startY + i * spacing, 20, color);
+        }
+    }
+}
+
+void Game::DrawGameOver()
+{
+    // Game over screen
+    DrawText("GAME OVER", GetScreenWidth()/2 - MeasureText("GAME OVER", 40)/2, 60, 40, RED);
+    DrawText(TextFormat("SCORE: %d", score), GetScreenWidth()/2 - MeasureText(TextFormat("SCORE: %d", score), 30)/2, 
+             150, 30, WHITE);
+    DrawText("PRESS ENTER TO CONTINUE", GetScreenWidth()/2 - MeasureText("PRESS ENTER TO CONTINUE", 20)/2, 
+             250, 20, WHITE);
+}
+
+void Game::DrawPaused()
+{
+    // Draw the game in the background
+    grid.Draw();
+    currentBlock.Draw();
+    
+    // Draw a semi-transparent overlay
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), {0, 0, 0, 150});
+    
+    // Draw pause menu
+    DrawText("PAUSED", GetScreenWidth()/2 - MeasureText("PAUSED", 40)/2, 60, 40, WHITE);
+    
+    const char* options[] = {
+        "RESUME",
+        "SAVE GAME",
+        "QUIT"
+    };
+    
+    int startY = 150;
+    int spacing = 40;
+    
+    for (int i = 0; i < 3; i++) {
+        Color color = (i == selectedMenuOption) ? YELLOW : WHITE;
+        DrawText(options[i], GetScreenWidth()/2 - MeasureText(options[i], 20)/2, 
+                startY + i * spacing, 20, color);
+    }
+}
+
+void Game::DrawHighScores()
+{
+    // Draw high scores
+    DrawText("HIGH SCORES", GetScreenWidth()/2 - MeasureText("HIGH SCORES", 40)/2, 20, 40, WHITE);
+    
+    // Load high scores
+    std::vector<PlayerData> highScores = FileIO::LoadHighScores();
+    
+    int startY = 80;
+    int spacing = 30;
+    
+    for (int i = 0; i < highScores.size(); i++) {
+        DrawText(TextFormat("%d. %s", i+1, highScores[i].name.c_str()), 
+                 30, startY + i * spacing, 18, WHITE);
+        DrawText(TextFormat("%d", highScores[i].highScore), 
+                 200, startY + i * spacing, 18, WHITE);
+    }
+    
+    DrawText("PRESS ENTER TO RETURN", GetScreenWidth()/2 - MeasureText("PRESS ENTER TO RETURN", 20)/2, 
+             startY + (highScores.size() + 2) * spacing, 20, WHITE);
+}
+
+void Game::DrawPlayerSelection()
+{
+    // Draw player selection screen
+    DrawText("SELECT PLAYER", GetScreenWidth()/2 - MeasureText("SELECT PLAYER", 40)/2, 20, 40, WHITE);
+    
+    int startY = 80;
+    int spacing = 30;
+    
+    // Get players with saved games
+    std::vector<PlayerData> allPlayers = FileIO::GetPlayerList();
+    std::vector<PlayerData> playersWithSaves;
+    
+    for (const auto& player : allPlayers) {
+        if (player.hasSavedGame) {
+            playersWithSaves.push_back(player);
+        }
+    }
+    
+    // Update player names list
+    playerNames.clear();
+    for (const auto& player : playersWithSaves) {
+        playerNames.push_back(player.name);
+    }
+    
+    // Make sure selectedPlayerIndex is valid
+    if (!playerNames.empty() && selectedPlayerIndex >= playerNames.size()) {
+        selectedPlayerIndex = 0;
+    }
+    
+    // Draw player list
+    for (int i = 0; i < playersWithSaves.size(); i++) {
+        Color color = (i == selectedPlayerIndex) ? YELLOW : WHITE;
+        DrawText(playersWithSaves[i].name.c_str(), 
+                 GetScreenWidth()/2 - MeasureText(playersWithSaves[i].name.c_str(), 18)/2, 
+                 startY + i * spacing, 18, color);
+    }
+    
+    DrawText("PRESS ENTER TO SELECT", GetScreenWidth()/2 - MeasureText("PRESS ENTER TO SELECT", 20)/2, 
+             startY + (playersWithSaves.size() + 2) * spacing, 20, WHITE);
+    DrawText("PRESS ESCAPE TO CANCEL", GetScreenWidth()/2 - MeasureText("PRESS ESCAPE TO CANCEL", 20)/2, 
+             startY + (playersWithSaves.size() + 3) * spacing, 20, WHITE);
+}
+
+void Game::DrawPlayerNameInput()
+{
+    // Draw a semi-transparent overlay
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), {0, 0, 0, 200});
+    
+    // Draw input box
+    DrawText("ENTER YOUR NAME", GetScreenWidth()/2 - MeasureText("ENTER YOUR NAME", 30)/2, 60, 30, WHITE);
+    
+    // Draw input box
+    DrawRectangle(50, 120, 200, 30, DARKGRAY);
+    DrawRectangleLines(50, 120, 200, 30, WHITE);
+    
+    // Draw input text
+    DrawText(inputPlayerName.c_str(), 60, 125, 20, WHITE);
+    
+    // Draw cursor (blinking)
+    if ((GetTime() * 2) - (int)(GetTime() * 2) < 0.5) {
+        DrawText("_", 60 + MeasureText(inputPlayerName.c_str(), 20), 125, 20, WHITE);
+    }
+    
+    DrawText("PRESS ENTER TO CONFIRM", GetScreenWidth()/2 - MeasureText("PRESS ENTER TO CONFIRM", 20)/2, 
+             180, 20, WHITE);
+}
+
+void Game::HandleInput()
+{
+    switch(gameState)
+    {
+        case STATE_MENU:
+            HandleMenuInput();
+            break;
+        case STATE_GAMEPLAY:
+            HandleGameplayInput();
+            break;
+        case STATE_GAMEOVER:
+            HandleGameOverInput();
+            break;
+        case STATE_PAUSE:
+            HandlePausedInput();
+            break;
+        case STATE_HIGHSCORE:
+            HandleHighScoreInput();
+            break;
+        case STATE_PLAYER_SELECT:
+            HandlePlayerSelectionInput();
+            break;
+    }
+    
+    // Handle player name input if needed
+    if (isEnteringName) {
+        UpdatePlayerNameInput();
+    }
+}
+
+void Game::HandleGameplayInput()
+{
+    int keyPressed = GetKeyPressed();
+    switch(keyPressed)
+    {
+        case KEY_LEFT:
+            MoveBlockLeft();
+            break;
+        case KEY_RIGHT:
+            MoveBlockRight();
+            break;
+        case KEY_DOWN:
+            MoveBlockDown();
+            break;
+        case KEY_UP:
+            RotateBlock();
+            break;
+        case KEY_P:
+            // Pause game
+            gameState = STATE_PAUSE;
+            selectedMenuOption = 0;
+            break;
+        case KEY_F5:
+            // Quick save
+            SaveGame();
+            break;
+    }
+}
+
+void Game::HandleMenuInput()
+{
+    int keyPressed = GetKeyPressed();
+    switch(keyPressed)
+    {
+        case KEY_UP:
+            selectedMenuOption--;
+            if (selectedMenuOption < 0)
+                selectedMenuOption = 3;
+            // Skip RESUME GAME if not available
+            if (selectedMenuOption == 1 && !resumeGameAvailable)
+                selectedMenuOption--;
+            break;
+        case KEY_DOWN:
+            selectedMenuOption++;
+            if (selectedMenuOption > 3)
+                selectedMenuOption = 0;
+            // Skip RESUME GAME if not available
+            if (selectedMenuOption == 1 && !resumeGameAvailable)
+                selectedMenuOption++;
+            break;
+        case KEY_ENTER:
+            switch(selectedMenuOption)
+            {
+                case 0: // NEW GAME
+                    // Ask for player name
+                    isEnteringName = true;
+                    inputPlayerName = "";
+                    break;
+                case 1: // RESUME GAME
+                    if (resumeGameAvailable) {
+                        // Show player selection
+                        gameState = STATE_PLAYER_SELECT;
+                        selectedPlayerIndex = 0;
+                    }
+                    break;
+                case 2: // HIGH SCORES
+                    gameState = STATE_HIGHSCORE;
+                    break;
+                case 3: // EXIT
+                    CloseWindow();
+                    break;
+            }
+            break;
+    }
+}
+
+void Game::HandleGameOverInput()
+{
+    if (IsKeyPressed(KEY_ENTER)) {
+        // Return to menu
+        gameState = STATE_MENU;
+        selectedMenuOption = 0;
+    }
+}
+
+void Game::HandlePausedInput()
+{
+    int keyPressed = GetKeyPressed();
+    switch(keyPressed)
+    {
+        case KEY_UP:
+            selectedMenuOption--;
+            if (selectedMenuOption < 0)
+                selectedMenuOption = 2;
+            break;
+        case KEY_DOWN:
+            selectedMenuOption++;
+            if (selectedMenuOption > 2)
+                selectedMenuOption = 0;
+            break;
+        case KEY_ENTER:
+            switch(selectedMenuOption)
+            {
+                case 0: // RESUME
+                    gameState = STATE_GAMEPLAY;
+                    break;
+                case 1: // SAVE GAME
+                    SaveGame();
+                    break;
+                case 2: // QUIT
+                    // Save game before quitting
+                    SaveGame();
+                    gameState = STATE_MENU;
+                    selectedMenuOption = 0;
+                    break;
+            }
+            break;
+        case KEY_P: // Also resume with P
+            gameState = STATE_GAMEPLAY;
+            break;
+    }
+}
+
+void Game::HandleHighScoreInput()
+{
+    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
+        gameState = STATE_MENU;
+        selectedMenuOption = 0;
+    }
+}
+
+void Game::HandlePlayerSelectionInput()
+{
+    int keyPressed = GetKeyPressed();
+    switch(keyPressed)
+    {
+        case KEY_UP:
+            selectedPlayerIndex--;
+            if (selectedPlayerIndex < 0)
+                selectedPlayerIndex = playerNames.size() - 1;
+            break;
+        case KEY_DOWN:
+            selectedPlayerIndex++;
+            if (selectedPlayerIndex >= playerNames.size())
+                selectedPlayerIndex = 0;
+            break;
+        case KEY_ENTER:
+            if (!playerNames.empty()) {
+                // Load the selected player's game
+                currentPlayer = playerNames[selectedPlayerIndex];
+                if (LoadGame(currentPlayer)) {
+                    gameState = STATE_GAMEPLAY;
+                }
+            }
+            break;
+        case KEY_ESCAPE:
+            gameState = STATE_MENU;
+            selectedMenuOption = 0;
+            break;
+    }
+}
+
+void Game::UpdatePlayerNameInput()
+{
+    int key = GetKeyPressed();
+    
+    // Handle backspace
+    if (key == KEY_BACKSPACE && !inputPlayerName.empty()) {
+        inputPlayerName.pop_back();
+    }
+    // Handle enter
+    else if (key == KEY_ENTER && !inputPlayerName.empty()) {
+        isEnteringName = false;
+        currentPlayer = inputPlayerName;
+        
+        // Start new game
+        Reset();
+        gameState = STATE_GAMEPLAY;
+    }
+    // Handle text input (allow letters, numbers, and some special characters)
+    else if (key >= 32 && key <= 126 && inputPlayerName.length() < 15) {
+        inputPlayerName += (char)key;
+    }
+}
+
+void Game::MoveBlockLeft()
+{
+    currentBlock.Move(0, -1);
+    if (IsBlockOutside())
+    {
+        currentBlock.Move(0, 1);
+    }
+}
+
+void Game::MoveBlockRight()
+{
+    currentBlock.Move(0, 1);
+    if (IsBlockOutside())
+    {
+        currentBlock.Move(0, -1);
+    }
+}
+
+void Game::MoveBlockDown()
+{
+    currentBlock.Move(1, 0);
+    if (IsBlockOutside())
+    {
+        currentBlock.Move(-1, 0);
+        LockBlock();
+        ClearLines();
+        CheckGameOver();
+        if (!GameOver()) {
+            currentBlock = nextBlock;
+            nextBlock = GetRandomBlock();
+        }
+    }
+}
+
+bool Game::IsBlockOutside()
+{
+    std::vector<Position> tiles = currentBlock.GetCellPositions();
+    for (Position item : tiles)
+    {
+        if (grid.IsCellOutside(item.row, item.column))
+        {
+            return true;
+        }
+        else if (!grid.IsCellEmpty(item.row, item.column))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Game::RotateBlock()
+{
+    currentBlock.Rotate();
+    if (IsBlockOutside())
+    {
+        currentBlock.UndoRotation();
+    }
+}
+
+void Game::LockBlock()
+{
+    std::vector<Position> tiles = currentBlock.GetCellPositions();
+    for (Position item : tiles)
+    {
+        grid.grid[item.row][item.column] = currentBlock.id;
+    }
+}
+
+void Game::Reset()
+{
+    // Reset game state
+    grid.Initialize();
+    blocks = GetAllBlocks();
+    currentBlock = GetRandomBlock();
+    nextBlock = GetRandomBlock();
+    score = 0;
+    level = 1;
+    lines = 0;
+    gameTime = 0;
+}
+
+void Game::SaveGame()
+{
+    if (currentPlayer.empty()) {
+        // If no player name, ask for one
+        isEnteringName = true;
+        inputPlayerName = "";
+        return;
+    }
+    
+    // Create game state
+    struct GameState state = GameToGameState(*this);
+    
+    // Save to file
+    if (FileIO::SaveGameState(currentPlayer, state)) {
+        // Display save success message (could add visual feedback)
+    }
+}
+
+bool Game::LoadGame(const std::string& playerName)
+{
+    // Load game state
+    struct GameState state;
+    if (FileIO::LoadGameState(playerName, state)) {
+        // Apply to current game
+        GameStateToGame(state, *this);
+        currentPlayer = playerName;
+        return true;
+    }
+    return false;
+}
+
+void Game::ClearLines()
+{
+    int linesCleared = 0;
+    
+    for (int row = 0; row < grid.numRows; row++) {
+        bool isRowFull = true;
+        for (int col = 0; col < grid.numCols; col++) {
+            if (grid.grid[row][col] == 0) {
+                isRowFull = false;
+                break;
+            }
+        }
+        
+        if (isRowFull) {
+            // Clear the row
+            for (int r = row; r > 0; r--) {
+                for (int c = 0; c < grid.numCols; c++) {
+                    grid.grid[r][c] = grid.grid[r-1][c];
+                }
+            }
+            
+            // Clear the top row
+            for (int c = 0; c < grid.numCols; c++) {
+                grid.grid[0][c] = 0;
+            }
+            
+            linesCleared++;
+        }
+    }
+    
+    if (linesCleared > 0) {
+        UpdateScore(linesCleared);
+    }
+}
+
+bool Game::GameOver()
+{
+    // Check if any block is in the top row
+    for (int col = 0; col < grid.numCols; col++) {
+        if (grid.grid[0][col] != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Game::UpdateScore(int linesCleared)
+{
+    // Update lines count
+    lines += linesCleared;
+    
+    // Update score based on lines cleared
+    switch (linesCleared) {
+        case 1:
+            score += 100 * level;
+            break;
+        case 2:
+            score += 300 * level;
+            break;
+        case 3:
+            score += 500 * level;
+            break;
+        case 4:
+            score += 800 * level;
+            break;
+    }
+    
+    // Update level
+    level = (lines / 10) + 1;
+    
+    // Save high score
+    if (!currentPlayer.empty()) {
+        FileIO::SaveHighScore(currentPlayer, score);
+    }
+}
+
+void Game::CheckGameOver()
+{
+    if (GameOver()) {
+        gameState = STATE_GAMEOVER;
+        
+        // Save high score
+        if (!currentPlayer.empty()) {
+            FileIO::SaveHighScore(currentPlayer, score);
+            // Delete saved game since game is over
+            FileIO::DeleteGameState(currentPlayer);
+        }
+    }
+}
+
+void Game::SetCurrentBlock(int blockId, int rotationState, int rowOffset, int columnOffset)
+{
+    // Create new block based on ID
+    switch (blockId) {
+        case 1: currentBlock = LBlock(); break;
+        case 2: currentBlock = JBlock(); break;
+        case 3: currentBlock = IBlock(); break;
+        case 4: currentBlock = OBlock(); break;
+        case 5: currentBlock = SBlock(); break;
+        case 6: currentBlock = TBlock(); break;
+        case 7: currentBlock = ZBlock(); break;
+        default: currentBlock = GetRandomBlock(); break;
+    }
+    
+    // Set rotation state
+    while (currentBlock.GetRotationState() != rotationState) {
+        currentBlock.Rotate();
+    }
+    
+    // Set position
+    int currentRowOffset = currentBlock.GetRowOffset();
+    int currentColOffset = currentBlock.GetColumnOffset();
+    currentBlock.Move(rowOffset - currentRowOffset, columnOffset - currentColOffset);
+}
+
+void Game::SetNextBlock(int blockId)
+{
+    // Create new block based on ID
+    switch (blockId) {
+        case 1: nextBlock = LBlock(); break;
+        case 2: nextBlock = JBlock(); break;
+        case 3: nextBlock = IBlock(); break;
+        case 4: nextBlock = OBlock(); break;
+        case 5: nextBlock = SBlock(); break;
+        case 6: nextBlock = TBlock(); break;
+        case 7: nextBlock = ZBlock(); break;
+        default: nextBlock = GetRandomBlock(); break;
+    }
+}

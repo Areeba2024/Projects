@@ -1,0 +1,19 @@
+CC = g++
+CFLAGS = -Wall -Wextra -std=c++17
+LIBS = -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+SRC = main.cpp game.cpp block.cpp grid.cpp position.cpp colors.cpp fileio.cpp
+OBJ = $(SRC:.cpp=.o)
+TARGET = tetris
+
+all: $(TARGET)
+
+$(TARGET): $(OBJ)
+	$(CC) $(OBJ) -o $(TARGET) $(LIBS)
+
+%.o: %.cpp
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(OBJ) $(TARGET)
+
+.PHONY: all clean

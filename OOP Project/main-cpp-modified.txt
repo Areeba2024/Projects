@@ -1,0 +1,71 @@
+#include <raylib.h>
+#include "game.h"
+#include "fileio.h"
+
+double lastUpdateTime = 0;
+double lastAutoSaveTime = 0;
+
+bool EventTriggered(double interval)
+{
+    double currentTime = GetTime();
+    if(currentTime - lastUpdateTime >= interval)
+    {
+        lastUpdateTime = currentTime;
+        return true;
+    }
+    return false;
+}
+
+bool AutoSaveTriggered(double interval)
+{
+    double currentTime = GetTime();
+    if(currentTime - lastAutoSaveTime >= interval)
+    {
+        lastAutoSaveTime = currentTime;
+        return true;
+    }
+    return false;
+}
+
+int main()
+{
+    Color darkBlue = {44,44,127,255};
+    //initializing the window
+    InitWindow(300,600,"Tetris with C++");
+    
+    SetTargetFPS(60);
+    
+    // Initialize file system
+    FileIO::Initialize();
+    
+    Game game = Game();
+
+    while(WindowShouldClose() == false){
+        game.HandleInput();
+        
+        if(game.gameState == STATE_GAMEPLAY)
+        {
+            // Update block movement based on level speed
+            double fallSpeed = 1.0 / (game.level * 0.5); // Fall speed increases with level
+            if(EventTriggered(fallSpeed))
+            {
+                game.MoveBlockDown();
+            }
+            
+            // Update game time
+            game.gameTime += GetFrameTime();
+            
+            // Auto-save every 2 minutes
+            if(AutoSaveTriggered(120.0) && !game.currentPlayer.empty())
+            {
+                game.SaveGame();
+            }
+        }
+        
+        BeginDrawing();
+        ClearBackground(darkBlue);
+        game.Draw();
+        EndDrawing();
+    }
+    CloseWindow();
+}

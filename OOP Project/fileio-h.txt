@@ -1,0 +1,82 @@
+#pragma once
+#include <vector>
+#include <string>
+#include <map>
+#include "game.h"
+
+// Structure to hold player data
+typedef struct PlayerData {
+    std::string name;
+    int highScore;
+    bool hasSavedGame;
+} PlayerData;
+
+// Structure to hold game state
+typedef struct GameState {
+    // Game board (10x20 standard Tetris board)
+    int board[20][20];
+    
+    // Current block info
+    int currentBlockId;
+    int currentRotationState;
+    int currentRowOffset;
+    int currentColumnOffset;
+    
+    // Next block info
+    int nextBlockId;
+    
+    // Game stats
+    int score;
+    int level;
+    int lines;
+    double gameTime;
+} GameState;
+
+// File handling class
+class FileIO {
+public:
+    // Initialize the file system
+    static bool Initialize();
+    
+    // Save a player's game state
+    static bool SaveGameState(const std::string& playerName, const GameState& state);
+    
+    // Load a player's game state
+    static bool LoadGameState(const std::string& playerName, GameState& state);
+    
+    // Save a player's high score
+    static bool SaveHighScore(const std::string& playerName, int score);
+    
+    // Load all high scores
+    static std::vector<PlayerData> LoadHighScores();
+    
+    // Get list of all players
+    static std::vector<PlayerData> GetPlayerList();
+    
+    // Delete a player's saved game
+    static bool DeleteGameState(const std::string& playerName);
+    
+    // Update player's saved game status
+    static bool UpdatePlayerStatus(const std::string& playerName, bool hasSavedGame);
+
+private:
+    // Path constants
+    static const std::string DATA_FOLDER;
+    static const std::string SAVES_FOLDER;
+    static const std::string PLAYERS_FILE;
+    
+    // Ensure all necessary directories exist
+    static bool EnsureDirectoriesExist();
+    
+    // Load players data file
+    static std::map<std::string, PlayerData> LoadPlayersData();
+    
+    // Save players data file
+    static bool SavePlayersData(const std::map<std::string, PlayerData>& playersData);
+};
+
+// Convert Game to GameState
+GameState GameToGameState(const Game& game);
+
+// Convert GameState to Game
+void GameStateToGame(const GameState& state, Game& game);

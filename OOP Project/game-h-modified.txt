@@ -1,0 +1,77 @@
+#pragma once
+#include "grid.h"
+#include "blocks.cpp"
+#include <string>
+
+enum GameState { STATE_MENU, STATE_GAMEPLAY, STATE_GAMEOVER, STATE_PAUSE, STATE_HIGHSCORE, STATE_PLAYER_SELECT };
+
+class Game {
+public:
+    Game();
+    Block GetRandomBlock();
+    std::vector<Block> GetAllBlocks();
+    void Draw();
+    void DrawMenu();
+    void DrawGameOver();
+    void DrawPaused();
+    void DrawHighScores();
+    void DrawPlayerSelection();
+    void HandleInput();
+    void MoveBlockLeft();
+    void MoveBlockRight();
+    void MoveBlockDown();
+    void Reset();
+    void SaveGame();
+    bool LoadGame(const std::string& playerName);
+    void ClearLines();
+    bool GameOver();
+    void UpdateScore(int linesCleared);
+    void SetCurrentBlock(int blockId, int rotationState, int rowOffset, int columnOffset);
+    void SetNextBlock(int blockId);
+    Grid grid;
+
+    // Game state
+    GameState gameState;
+    std::string currentPlayer;
+    int score;
+    int level;
+    int lines;
+    double gameTime;
+    
+    // Menu state
+    int selectedMenuOption;
+    int selectedPlayerIndex;
+    std::vector<std::string> playerNames;
+    bool resumeGameAvailable;
+    
+    // Blocks
+    Block currentBlock;
+    Block nextBlock;
+    
+    // Make these accessible for file handling
+    friend GameState GameToGameState(const Game& game);
+    friend void GameStateToGame(const GameState& state, Game& game);
+
+private:
+    std::vector<Block> blocks;
+    bool IsBlockOutside();
+    void RotateBlock();
+    void LockBlock();
+    
+    // Input handlers for different game states
+    void HandleGameplayInput();
+    void HandleMenuInput();
+    void HandleGameOverInput();
+    void HandlePausedInput();
+    void HandleHighScoreInput();
+    void HandlePlayerSelectionInput();
+    
+    // Game logic
+    void CheckGameOver();
+    
+    // Player input
+    std::string inputPlayerName;
+    bool isEnteringName;
+    void UpdatePlayerNameInput();
+    void DrawPlayerNameInput();
+};
